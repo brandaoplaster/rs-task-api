@@ -1,14 +1,18 @@
+use actix_web::{
+  delete, get, post,
+  web::{scope, Data, Json, Path, Query, ServiceConfig},
+  HttpResponse, Responder,
+};
+
+use serde_json::json;
+use uuid::Uuid;
+
 use crate::{
   model::TaskModel,
   schema::{CreateTaskSchema, FilterOptions},
   AppState,
 };
-use actix_web::{
-  get, post,
-  web::{scope, Data, Json, Query, ServiceConfig},
-  HttpResponse, Responder,
-};
-use serde_json::json;
+
 #[get("/healthchecker")]
 async fn health_checker() -> impl Responder {
   const MESSAGE: &str = "Health check: API is up and running smoothly.";
@@ -78,10 +82,33 @@ async fn get_all_tasks(opts: Query<FilterOptions>, data: Data<AppState>) -> impl
   }
 }
 
+#[delete("/tasks/{id}")]
+async fn delete_task_by_id(path: Path<Uuid>, data: Data<AppState>) -> impl Responder {
+  let task_id = path.into_inner();
+
+  match sqlx::query_as!(TaskModel, "DELETE FROM tasks WHERE id = $1", task_id)
+    .execute(&data.db)
+    .await
+  {
+    Ok(_) => {
+      return HttpResponse::NoContent().finish();
+    }
+
+    Err(error) => {
+      return HttpResponse::InternalServerError().json(json!({
+          "status": "error",
+          "message": format!("{:?}", error)
+      }))
+    }
+  }
+}
+
 pub fn config(conf: &mut ServiceConfig) {
   let scope = scope("/api")
     .service(health_checker)
     .service(create_task)
-    .service(get_all_tasks);
+    .service(get_all_tasks)
+    .service(delete_task_by_id);
+
   conf.service(scope);
 }
